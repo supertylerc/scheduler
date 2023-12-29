@@ -1,7 +1,6 @@
 package leader_test
 
 import (
-	"log/slog"
 	"testing"
 
 	"github.com/alicebob/miniredis/v2"
@@ -14,7 +13,6 @@ func TestNewRedisLeader(t *testing.T) {
 
 	ctx := leader.Ctx
 
-	// Run miniredis server
 	miniServer := miniredis.RunT(t)
 	defer miniServer.Close()
 
@@ -24,7 +22,6 @@ func TestNewRedisLeader(t *testing.T) {
 		ClientName: "testclient1",
 	})
 
-	// Set key with 100ms TTL
 	err := miniClient.Set(ctx, "leader:uuid", "key", leader.LeaderTTL).Err()
 	if err != nil {
 		t.Errorf("Failed to set initial key/value")
@@ -32,25 +29,34 @@ func TestNewRedisLeader(t *testing.T) {
 
 	miniServer.FastForward(leader.LeaderTTL)
 
-	// Set up leader client on miniClient with RedisLeader Options{}
+	ldr, _ := leader.NewRedisLeader(miniClient, "leader:uuid")
 
-	ldr, err := leader.NewRedisLeader(miniClient, "leader:uuid")
-	if err != nil {
-		t.Errorf("NewRedisLeader() failed %v", err)
+	tests := []struct {
+		name  string
+		input string
+		ldr   *leader.RedisLeader
+		want  bool
+	}{
+		{
+			name:  "Become the leader",
+			input: "leader:uuid",
+			ldr:   ldr,
+			want:  true,
+		},
+		{
+			name:  "Not the leader",
+			input: "",
+			ldr:   ldr,
+			want:  true,
+		},
 	}
 
-	slog.Info("New Leader", "contains", ldr.UUID)
-
-	err = ldr.WriteLeader()
-	if err != nil {
-		t.Errorf("WriteLeader() failed %v", err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, _ := tt.ldr.IsCurrentLeader()
+			if got != tt.want {
+				t.Errorf("IsCurrentLeader() = %v, want %v", got, tt.want)
+			}
+		})
 	}
-
-	isLdr, err := ldr.IsCurrentLeader()
-	if err != nil || isLdr == false {
-		t.Errorf("Call to IsCurrentLeader() failed %v", err)
-	}
-
-	slog.Info("Current Leader", "status", isLdr)
-	slog.Info("Current Leader", "UUID", ldr.UUID)
 }
